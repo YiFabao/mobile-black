@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>变更说明 · 2026-10-12 · 通讯录选号功能</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+         max-width: 46rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; line-height: 1.75; }
+  h1 { font-size: 1.5rem; line-height: 1.4; }
+  h2 { font-size: 1.15rem; margin-top: 2.2rem; border-bottom: 1px solid currentColor; padding-bottom: .3rem; opacity: .9; }
+  code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .9em; }
+  pre { background: color-mix(in srgb, currentColor 8%, transparent); padding: .8rem 1rem;
+        border-radius: .5rem; overflow-x: auto; }
+  .muted { opacity: .7; font-size: .9rem; }
+</style>
+</head>
+<body>
+
+<h1>变更说明：添加从通讯录选择号码功能</h1>
+<p class="muted">日期：2026-10-12 · 性质：功能增强</p>
+
+<h2>一、为什么做</h2>
+<p>之前添加号码只能手动输入，如果骚扰电话恰好存在通讯录里（比如之前联系过的商家、快递），
+还要自己翻通讯录找到号码再复制过来，不方便。</p>
+
+<h2>二、改了什么</h2>
+<ul>
+  <li><strong>新增</strong> <code>MobileBlack/ContactPicker.swift</code>：用 <code>UIViewControllerRepresentable</code> 包装系统 <code>CNContactPickerViewController</code>，让 SwiftUI 界面能调起通讯录选人。</li>
+  <li><strong>修改</strong> <code>MobileBlack/AddNumberSheet.swift</code>：在号码输入框下方增加「从通讯录选择」按钮，选中联系人后号码自动填入输入框，联系人姓名自动填入标签字段。</li>
+  <li><strong>修改</strong> <code>MobileBlack.xcodeproj/project.pbxproj</code>：Debug 和 Release 两个配置均加入 <code>INFOPLIST_KEY_NSContactsUsageDescription</code>，系统会在首次调起通讯录时弹出权限请求。</li>
+  <li><strong>更新</strong> <code>README.md</code>：「怎么用」部分补充通讯录选号说明。</li>
+</ul>
+
+<h2>三、设计要点</h2>
+<ul>
+  <li>使用 <code>contactPicker(_:didSelect:)</code> delegate 而非 property-based 模式——系统只返回用户选中的那个号码，App 不需要也不应该读取通讯录全量数据，权限更小。</li>
+  <li><code>predicateForEnablingContact</code> 设为 <code>phoneNumbers.@count &gt; 0</code>，无电话号码的联系人置灰不可选。</li>
+  <li>纯加性改动：手动输入号码的原有流程完全不受影响。</li>
+</ul>
+
+<h2>四、影响范围</h2>
+<p>仅主 App target（MobileBlack），Call Directory 扩展不受影响。
+编译验证通过（零错误零警告），31 条单元测试全绿。</p>
+
+</body>
+</html>
