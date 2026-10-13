@@ -14,6 +14,10 @@
    400 后八位有一亿种组合，枚举不可能。**所以「400 整段拦掉」在 iOS 上做不到**，
    那部分请交给运营商：移动发短信 `KTFSR` 到 `10086`（取消 `QXFSR`），
    电信 `KTFSR` 到 `10001`，联通走「联通助理」公众号的手机管家。
+   
+   **但可以采样拦截**：App 支持添加号段规则（如 400、170），系统会在预算内按比例分配条数，
+   在号段范围内等间距采样生成号码。400 号段约 1000 万号码，系统最多分配约 45000 条采样名额，
+   每隔约 222 个号码取一个。这不是全覆盖，但能拦住大部分骚扰电话。真正的号段级拦截仍请交给运营商。
 2. **号码必须按数值严格升序喂入**，乱序整批失败（`EntriesOutOfOrder`），
    重复亦失败（`DuplicateEntries`），条数超限失败（`MaximumEntriesExceeded`）。
 3. **号码类型是 `int64_t`。** Xcode 27 SDK 里 `typedef int64_t CXCallDirectoryPhoneNumber`
@@ -30,11 +34,20 @@
 ```
 MobileBlack.xcodeproj        工程文件（手写，objectVersion 77 + 同步组，无第三方生成工具）
 MobileBlack/                 主 App（SwiftUI）：名单管理、导入、重载扩展、跳系统设置
+  ContentView.swift          主界面：状态卡、号段规则、拦截/标记名单
+  AddNumberSheet.swift       添加单个号码
+  AddPrefixSheet.swift       添加号段规则（一键拦截某个前缀）
+  ImportSheet.swift          批量导入
+  StoreModel.swift           界面与名单之间的桥接层
+  ExtensionBridge.swift      与 Call Directory 扩展通信
+  ContactPicker.swift        从通讯录选号
 CallDirectoryExt/            Call Directory 扩展（.appex）：把名单喂给系统
 Shared/                      两端共用的纯逻辑，不 import CallKit，故 Mac 上可直接 swift test
   NumberNormalizer.swift     号码规范化（各种写法 → Int64）
   ListTextParser.swift       名单文本解析
   BlockEntry.swift           名单条目模型（含 block／label 两级）
+  PrefixRule.swift           号段规则模型（前缀、级别、验证）
+  PrefixNumberGenerator.swift 号段采样号码生成器（预算分配、等间距采样、合并去重）
   BlacklistStore.swift       名单存取（App Group 容器 + JSON）
   LoadLog.swift              扩展加载结果落盘，供主 App 显示
   CallDirectoryErrorExplainer.swift  失败码译成中文
@@ -42,6 +55,11 @@ Shared/                      两端共用的纯逻辑，不 import CallKit，故
   blocklist.seed.txt         出厂名单（可编辑）
 Config/                      两个 target 的 entitlements（App Group）
 Tests/                       SwiftPM 单元测试（Mac 上跑，不需模拟器）
+  BlacklistStoreTests.swift  名单存取测试
+  PrefixRuleTests.swift      号段规则与采样生成器测试
+  NumberNormalizerTests.swift 号码规范化测试
+  ListTextParserTests.swift  名单文本解析测试
+  CallDirectoryErrorExplainerTests.swift 失败码翻译测试
 tools/normalize.py           把杂乱名单规范化成可导入格式
 tools/test_normalize.py      上述工具的单元测试
 ```
@@ -141,6 +159,11 @@ App 首屏的状态卡会直接显示「已启用／未启用」，未启用时�
   选级别，存。界面会即时显示规范化后的号码，避免存进去的和想拦的不是同一个号。
   也可以点「从通讯录选择」直接从联系人里挑一个号码加入。
 - **批量导入**：左上「导入」，粘贴文本或选 `.txt`／`.csv` 文件。
+- **加号段规则**：右上 `＋` → 「添加号段」，输入前缀（如 `400`、`170`、`171`），
+  选级别，存。系统会在预算内按比例分配条数，在号段范围内等间距采样生成号码。
+  例如 400 号段约 1000 万号码，系统最多分配约 45000 条采样名额，每隔约 222 个号码取一个。
+  **注意：这是采样拦截而非全覆盖**，未被采到的号码仍会振铃。真正的号段级拦截请交给运营商。
+  号段规则支持启用/禁用（左滑），不影响已添加的单个号码。
 - **改名单文件**：编辑 `Shared/blocklist.seed.txt` 后重新编译；
   或用工具把杂乱名单先洗干净：
 

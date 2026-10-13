@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>号段规则功能 - 2026-10-13</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #333; }
+  h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+  h2 { color: #34495e; margin-top: 30px; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+  pre { background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; }
+  .highlight { background: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0; }
+  .file-list { background: #e8f4f8; padding: 15px; border-radius: 5px; }
+  ul { line-height: 1.8; }
+</style>
+</head>
+<body>
+
+<h1>号段规则功能 - 一键拦截号段</h1>
+<p><strong>日期：</strong>2026-10-13</p>
+<p><strong>变更类型：</strong>新功能（feat）</p>
+
+<h2>变更背景</h2>
+<p>CallKit 不支持号段通配（前缀匹配），只能逐条枚举完整号码。400 号段有 1000 万个号码，无法全部枚举。但用户希望能一键拦截某个号段（如 400、170）的骚扰电话。</p>
+
+<h2>解决方案</h2>
+<p>实现<strong>号段采样拦截</strong>：在预算内按比例分配条数，在号段范围内等间距采样生成号码。</p>
+
+<div class="highlight">
+<strong>重要说明：</strong>这是采样拦截而非全覆盖。400 号段约 1000 万号码，系统最多分配约 45000 条采样名额，每隔约 222 个号码取一个。未被采到的号码仍会振铃。真正的号段级拦截请交给运营商（移动发短信 KTFSR 到 10086）。
+</div>
+
+<h2>核心设计</h2>
+<ul>
+  <li><strong>预算分配：</strong>总上限 50000 条，减去手动条目数后按比例分配给各号段规则</li>
+  <li><strong>按比例分配：</strong>号段越大（号码越多）分到的条数越多。如 400（1000 万）和 170（1 亿）同时启用，比例约 1:10</li>
+  <li><strong>等间距采样：</strong>在号段范围内均匀取号，尽量铺开覆盖面</li>
+  <li><strong>重叠处理：</strong>长前缀优先。如同时启用 "9" 和 "95"，"95" 取代 "9"</li>
+  <li><strong>合并去重：</strong>手动条目与号段生成条目合并排序，保证 CallKit 要求的严格升序</li>
+</ul>
+
+<h2>新增文件</h2>
+<div class="file-list">
+<ul>
+  <li><code>Shared/PrefixRule.swift</code> - 号段规则模型（前缀、级别、验证、号码范围计算）</li>
+  <li><code>Shared/PrefixNumberGenerator.swift</code> - 采样生成器（预算分配、等间距采样、合并去重）</li>
+  <li><code>MobileBlack/AddPrefixSheet.swift</code> - 添加号段规则界面</li>
+  <li><code>Tests/PrefixRuleTests.swift</code> - 25 条测试用例（验证、范围、预算、采样、合并）</li>
+</ul>
+</div>
+
+<h2>修改文件</h2>
+<div class="file-list">
+<ul>
+  <li><code>Shared/BlacklistStore.swift</code> - 添加号段规则 CRUD（<code>prefixRules()</code>、<code>addPrefix()</code>、<code>removePrefix()</code>、<code>togglePrefix()</code>）</li>
+  <li><code>Shared/LoadLog.swift</code> - 添加 <code>prefixBlockingCount</code>、<code>prefixIdentificationCount</code> 字段（向后兼容）</li>
+  <li><code>CallDirectoryExt/CallDirectoryHandler.swift</code> - 集成号段采样生成，合并手动与生成条目</li>
+  <li><code>MobileBlack/StoreModel.swift</code> - 添加号段规则管理方法</li>
+  <li><code>MobileBlack/ContentView.swift</code> - 添加号段规则列表、<code>PrefixRuleRow</code> 组件、更新加载记录显示</li>
+  <li><code>README.md</code> - 更新硬约束说明、使用说明、目录结构</li>
+</ul>
+</div>
+
+<h2>测试覆盖</h2>
+<ul>
+  <li>PrefixRule 验证：空、非数字、过短、过长、0 开头、合法、空白清洗</li>
+  <li>号码范围计算：400、170、95、4001 等号段的起止和总数</li>
+  <li>预算分配：比例分配、禁用跳过、重叠处理、零预算、无启用规则</li>
+  <li>采样生成：条数正确、严格升序、范围内、标记级带标签、默认标签</li>
+  <li>合并去重：排序去重、空输入、排除拦截号码</li>
+  <li>集成场景：端到端 400 号段生成验证</li>
+</ul>
+
+<p><strong>测试结果：</strong>56 条测试全部通过（0 失败）</p>
+
+<h2>使用方式</h2>
+<ol>
+  <li>打开 App，点击右上角 <code>＋</code> → 「添加号段」</li>
+  <li>输入前缀（如 <code>400</code>、<code>170</code>、<code>171</code>）</li>
+  <li>选择级别（拦截 / 标记）</li>
+  <li>点击「保存」</li>
+</ol>
+
+<p>界面会显示估算的覆盖范围（如"约 1000 万号码"），系统会在后台生成采样号码并喂给 CallKit。</p>
+
+<h2>影响范围</h2>
+<ul>
+  <li>新增功能，不影响现有手动条目的增删改查</li>
+  <li>号段规则与手动条目独立存储（<code>prefixrules.json</code>）</li>
+  <li>扩展加载时同时处理手动和号段生成条目</li>
+  <li>加载记录新增号段生成条数显示（向后兼容旧版日志）</li>
+</ul>
+
+<h2>已知局限</h2>
+<ul>
+  <li>采样 ≠ 全覆盖，未被采到的号码仍会振铃</li>
+  <li>号段规则上限 20 条（避免预算过度分散）</li>
+  <li>前缀长度 2-5 位（过短覆盖面太广易误伤，过长意义不大）</li>
+  <li>真正的号段级拦截需运营商层面处理（来电显示伪造、VoIP 等）</li>
+</ul>
+
+</body>
+</html>
